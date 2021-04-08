@@ -1,2 +1,2 @@
-# consumodpolis
-Trainer para el juego del Ministerio de Consumo, Consumópolis
+# consumó(d)polis
+> Trainer para el juego del Ministerio de Consumo, Consumópolis
