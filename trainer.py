@@ -33,8 +33,7 @@ class Consumodpolis():
     }
 
     # Expresiones regulares
-    gameRegex = r'http://www\.consumopolis\.es/concurso/juegos/(?P<juego>\d?)/index\.html\?juego=\d?&ciclo=(?P<ciclo>\d?)&idioma=(?P<idioma>\w{2})'
-    alt_gameRegex = r'http://www\.consumopolis\.es/concurso/juegos/(?P<juego>[2-9])/index\.html\?juego=\d?&edicion=(?P<edicion>\d)&ciclo=(?P<ciclo>\d?)&idioma=(?P<idioma>\w{2})'
+    gameRegex = r'.+/(\d?)/\d?.+=(\d)'
         
     @classmethod
     def __init__(self):
@@ -51,11 +50,8 @@ class Consumodpolis():
         # Esperar a que se realice el inicio de sesión
         print('Inicio de sesión')
         while True:
-            #user = input('Nombre de usuario: ')
-            #password = getpass.getpass('Contraseña: ')
-
-            user = 'Avery'
-            password = 'PATATAS'
+            user = input('Nombre de usuario: ')
+            password = getpass.getpass('Contraseña: ')
 
             # Cambiar al iframe
             driver.switch_to.frame(0)
@@ -80,13 +76,16 @@ class Consumodpolis():
                 continue
             else:
                 print('¡Sesión iniciada correctamente!')
+                time.sleep(1)
+                _session = (user, re.search(r'\d+', [r for r in driver.requests if 'Avatar.aspx' in r.url][0].body.decode()).group(0))
+                print('Sesión iniciada como %s (ID: %s)' %(_session[0], _session[1]))
                 break
                 
         # Cambiar al contenido principal
         driver.switch_to.default_content()
 
     @classmethod
-    def modify_point_count(self):
+    def modify_score(self):
         print('Selecciona el juego cuyo valor quieras modificar:')
         for name, value in self.games.items():
             print('%s) %s' %(name, value))
@@ -96,16 +95,19 @@ class Consumodpolis():
                 print('Opción inválida')
                 continue
             break
-        _v = input('Nuevo valor (0-2500): ')
+        _v = int(input('Nuevo valor (0-2500): '))
         if _v > 2500:
             _v = 2500
+        _r = requests.post('http://www.consumopolis.es/concurso/juegos/scripts/grabarPartida.aspx',
+                           data={'juego': _s, 'alumno': self._session[1], 'puntos': _v})
+        if b'ok' in _r.content:
+            print('Cambiado el valor del juego "%s" a %d' %(self.games[str(_s)], _v))
+        else:
+            print('Ha ocurrido un error | https://github.com/Aveeryy/consumodpolis/issues/')
         
-
-
-
     @classmethod
     def get_answers(self):
-        gameRegex, alt_gameRegex = self.gameRegex, self.alt_gameRegex
+        gameRegex = self.gameRegex
         # Esperar a que el usuario seleccione un juego
         _iframe = driver.find_element_by_xpath('/html/body/div[1]/div[3]/div[2]/iframe')  
         self._iframe = _iframe
@@ -116,23 +118,11 @@ class Consumodpolis():
                 if re.match(gameRegex, _iframe_url) is None and re.match(alt_gameRegex, _iframe_url) is None:
                     continue
                 break
-            if not 'edicion' in _iframe.get_attribute('src'):
-                # Gran mayoría de juegos, exceptuando "4 imágenes, 1 palabra" y "Cadena de preguntas (1)"
-                _game = re.match(gameRegex, _iframe_url)
-                if _game is not None:
-                    _id = _game.group(1)
-                    _group = _game.group(2)
-                    _lang = _game.group(3)
-                    _data = 'juego=%s&idioma=%s&ciclo=%s' %(_id, _lang, _group)
-            else:
-                # "4 imágenes, 1 palabra" y "Cadena de preguntas (1)"
-                _game = re.match(alt_gameRegex, _iframe_url)
-                if _game is not None:
-                    _id = _game.group(1)
-                    _edition = _game.group(2)
-                    _group = _game.group(3)
-                    _lang = _game.group(4)
-                    _data = 'juego=%s&edicion=%s&idioma=%s&ciclo=%s' %(_id, _edition, _lang, _group)      
+            _game = re.match(gameRegex, _iframe_url)
+            if _game is not None:
+                _id = _game.group(1)
+                _group = _game.group(2)
+                _data = 'juego=%s&idioma=%s&ciclo=%s' %(_id, _group)
 
             self._game = _game      
 
@@ -149,18 +139,19 @@ class Consumodpolis():
                 getattr(self, 'game_' + _id)()
 
     @classmethod
+    def get_api_json(self):
+        # Obtiene las respuestas de la memoria de Chrome
+        print('Obteniendo JSON con las respuestas...')
+        return [r for r in driver.requests if 'recuperarContenidos.aspx' in r.url][-1:][0].response.body.decode()
+
+    @classmethod
     # 4 imágenes 1 palabra, juego 2
     def game_2(self, get_name=False):
         if get_name:
             return '4 imágenes 1 palabra'
         input('Pulsa ENTER en cuanto pulses el botón de iniciar juego')
-
-        # Obtiene las respuestas de la memoria de Chrome
-        print('Obteniendo JSON con las respuestas...')
-        time.sleep(0.5)      
-        _requests = [r for r in driver.requests if 'recuperarContenidos.aspx' in r.url]
-        _unparsed = _requests[-1:][0].response.body.decode()
-        _parsed = json.loads(_unparsed)
+        time.sleep(0.5)
+        _parsed = self.get_api_json()
         # Escribe las palabras en orden
         for palabra in _parsed['palabras']:
             print('Respuesta: ' + palabra['palabra'])
@@ -173,5 +164,5 @@ class Consumodpolis():
 
 
 if __name__ == '__main__':
-    Consumodpolis.modify_point_count()
+    Consumodpolis()
     
