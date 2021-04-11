@@ -3,6 +3,7 @@ import re
 import getpass
 import time
 import requests
+import selenium
 import seleniumwire
 from seleniumwire.webdriver import Chrome as Driver
 from urllib.parse import unquote
@@ -33,11 +34,11 @@ class Consumodpolis():
     }
 
     # Expresiones regulares
-    gameRegex = r'.+/(\d?)/\d?.+=(\d)'
+    gameRegex = r'.+/\d?/.+=(\d)?.+=(\d)'
         
     @classmethod
     def __init__(self):
-        global driver
+        global driver, _session
 
         # Crear una instancia de webdriver
         print('Inicializando instancia de ChromeDriver...')
@@ -48,41 +49,36 @@ class Consumodpolis():
         driver.find_element_by_id("city").click()
 
         # Esperar a que se realice el inicio de sesión
-        print('Inicio de sesión')
+        print('Esperando inicio de sesión')
+        # Cambiar al iframe
+        driver.switch_to.frame(0)
         while True:
-            user = input('Nombre de usuario: ')
-            password = getpass.getpass('Contraseña: ')
 
-            # Cambiar al iframe
-            driver.switch_to.frame(0)
             # Obtener los campos de entrada de usuario y contraseña
-            driver.find_element_by_id('inputUser').send_keys(user)
-            driver.find_element_by_id('inputPassword').send_keys(password)
-            driver.find_element_by_id('send-button').click()
-            # Volver al contenido principal
-            driver.switch_to.default_content()
-            time.sleep(0.2)
-            # Obtener código de error
-            if driver.find_element_by_xpath('/html/body').get_attribute('class') == 'modal-open':
-                # Mostrar código de error
-                print('Ha ocurrido un error: ' + driver.find_element_by_xpath('/html/body/div[4]/div/div/div/div/div/div/div').text.split('\n')[0])
-                # Cerrar el cuadro de error
-                driver.find_element_by_xpath('/html/body/div[4]/div/div/div/div/div/div/div/button').click()
-                # Limpiar los cuadros de entrada
-                driver.switch_to.frame(0)
-                driver.find_element_by_id('inputUser').clear()
-                driver.find_element_by_id('inputPassword').clear()
-                driver.switch_to.default_content()
+            try: 
+                _name = driver.find_element_by_id('nick').text
+            except selenium.common.exceptions.NoSuchElementException:
                 continue
             else:
                 print('¡Sesión iniciada correctamente!')
-                time.sleep(1)
-                _session = (user, re.search(r'\d+', [r for r in driver.requests if 'Avatar.aspx' in r.url][0].body.decode()).group(0))
+                _session = (_name, re.search(r'\d+', [r for r in driver.requests if 'Avatar.aspx' in r.url][0].body.decode()).group(0))
                 print('Sesión iniciada como %s (ID: %s)' %(_session[0], _session[1]))
                 break
                 
         # Cambiar al contenido principal
         driver.switch_to.default_content()
+
+        def _menu():
+            while True:
+                print('1) Obtener respuestas del juego\n2) Modificar puntuaciones\n')
+                _sel = input('Tu selección: ')
+                if _sel == '1':
+                    self.get_answers()
+                elif _sel == '2':
+                    self.modify_score()
+                else:
+                    print('Opción inválida')        
+        _menu()
 
     @classmethod
     def modify_score(self):
@@ -99,11 +95,11 @@ class Consumodpolis():
         if _v > 2500:
             _v = 2500
         _r = requests.post('http://www.consumopolis.es/concurso/juegos/scripts/grabarPartida.aspx',
-                           data={'juego': _s, 'alumno': self._session[1], 'puntos': _v})
+                           data={'juego': _s, 'alumno': _session[1], 'puntos': _v})
         if b'ok' in _r.content:
-            print('Cambiado el valor del juego "%s" a %d' %(self.games[str(_s)], _v))
+            print('Cambiado el valor del juego "%s" a %d\n' %(self.games[str(_s)], _v))
         else:
-            print('Ha ocurrido un error | https://github.com/Aveeryy/consumodpolis/issues/')
+            print('Ha ocurrido un error | https://github.com/Aveeryy/consumodpolis/issues/\n')
         
     @classmethod
     def get_answers(self):
@@ -115,34 +111,46 @@ class Consumodpolis():
             print('Esperando a que selecciones un juego...')
             while True:
                 _iframe_url = _iframe.get_attribute('src')
-                if re.match(gameRegex, _iframe_url) is None and re.match(alt_gameRegex, _iframe_url) is None:
+                if re.match(gameRegex, _iframe_url) is None:
                     continue
                 break
             _game = re.match(gameRegex, _iframe_url)
             if _game is not None:
                 _id = _game.group(1)
                 _group = _game.group(2)
-                _data = 'juego=%s&idioma=%s&ciclo=%s' %(_id, _group)
+                _data = 'juego=%s&idioma=%s&ciclo=%s' %(_id, 'es', _group)
 
-            self._game = _game      
+            self._game = _game
+            _current_game = _game.group(0)
 
             if not hasattr(self, 'game_' + _id):
-                _current_game = _game.group(0)
                 print('Juego no soportado.')
-                while _current_game == _iframe.get_attribute('src'):
+                while _current_game in _iframe.get_attribute('src'):
                     continue
                 else:
                     pass
                 continue
             else:
-                print('Juego seleccionado: %s' % getattr(self, 'game_' + _id)(True))
+                print('Juego seleccionado: %s' % getattr(self, 'game_' + _id)(True)) 
                 getattr(self, 'game_' + _id)()
 
     @classmethod
     def get_api_json(self):
         # Obtiene las respuestas de la memoria de Chrome
         print('Obteniendo JSON con las respuestas...')
-        return [r for r in driver.requests if 'recuperarContenidos.aspx' in r.url][-1:][0].response.body.decode()
+        time.sleep(1)
+        try:
+            return json.loads([r for r in driver.requests if 'recuperarContenidos.aspx' in r.url][-1:][0].response.body.decode())
+        except IndexError:
+            return 'Failure'
+
+    @classmethod
+    def wait_until_finish(self):
+        print('Esperando a que acabes...')
+        # Esperar a que el juego acabe
+        while self._game.group(0) in self._iframe.get_attribute('src'):
+            continue
+        return
 
     @classmethod
     # 4 imágenes 1 palabra, juego 2
@@ -150,19 +158,101 @@ class Consumodpolis():
         if get_name:
             return '4 imágenes 1 palabra'
         input('Pulsa ENTER en cuanto pulses el botón de iniciar juego')
-        time.sleep(0.5)
         _parsed = self.get_api_json()
+        if _parsed == 'Failure':
+            print('Ha ocurrido un error')
+            return
         # Escribe las palabras en orden
         for palabra in _parsed['palabras']:
             print('Respuesta: ' + palabra['palabra'])
-        print('Esperando a que acabes...')
-        # Esperar a que el juego acabe
-        while self._game.group(0) ==  self._iframe.get_attribute('src'):
-            continue
-        pass
-        
+        self.wait_until_finish()
+
+    @classmethod
+    # Cadena de preguntas (1), juego 3
+    def game_3(self, get_name=False):
+        if get_name:
+            return 'Cadena de preguntas (1)'
+        _parsed = self.get_api_json()
+        if _parsed == 'Failure':
+            print('Ha ocurrido un error')
+            return
+        # Escribe las respuestas en orden
+        for respuesta in _parsed['preguntas']:
+            print('Respuesta: ' + respuesta['correcta'])
+        self.wait_until_finish()
+
+    @classmethod
+    # Cadena de preguntas (2), juego 4
+    def game_4(self, get_name=False):
+        if get_name:
+            return 'Cadena de preguntas (2)'
+        self.game_3()
+        return
+
+    @classmethod
+    # Ordena las letras, juego 5
+    def game_5(self, get_name=False):
+        if get_name:
+            return 'Ordena las letras'
+        input('Pulsa ENTER en cuanto pulses el botón de iniciar juego')
+        self.game_2()
+        return
+
+    @classmethod
+    # Verdadero o falso, juego 6
+    def game_6(self, get_name=False):
+        if get_name:
+            return 'Verdadero o falso'
+        _parsed = self.get_api_json()
+        if _parsed == 'Failure':
+            print('Ha ocurrido un error')
+            return
+        print(_parsed)
+        # Escribe las respuestas en orden
+        for respuesta in _parsed['preguntas']:
+            if respuesta['verdadero'] == 'true':
+                res = 'Verdadera'
+            else:
+                res = 'Falsa'
+            print('Respuesta: ' + res)
+        self.wait_until_finish()
+
+    @classmethod
+    # Buena memoria, juego 7
+    def game_7(self, get_name=False):
+        if get_name:
+            return 'Buena memoria'
+        _parsed = self.get_api_json()
+        if _parsed == 'Failure':
+            print('Ha ocurrido un error')
+            return
+        # Escribe las respuestas en orden
+        i = 0
+        for respuesta in _parsed['preguntas']:
+            print('Respuesta: ' + unquote(respuesta['correcta']).replace('+', ' '))
+            i -=- 1
+            if i >= 6:
+                break
+        self.wait_until_finish()
+
+
+    # TODO: implementar trotamundos
+
+    @classmethod
+    # La ciudad misteriosa, juego 9
+    def game_9(self, get_name=False):
+        if get_name:
+            return 'La ciudad misteriosa'
+        _parsed = self.get_api_json()
+        if _parsed == 'Failure':
+            print('Ha ocurrido un error')
+            return
+        # Escribe las respuestas en orden
+        print('Respuesta: ' + unquote(_parsed['ciudad']).replace('+', ' '))
+        print('Latitud: ' + _parsed['latitud'])
+        print('Longitud: ' + _parsed['longitud'])
+        self.wait_until_finish()
 
 
 if __name__ == '__main__':
     Consumodpolis()
-    
