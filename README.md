@@ -1,4 +1,4 @@
-# consumó(d)polis
+# Consumó(d)polis
 > Trainer para el juego del Ministerio de Consumo, Consumópolis
 
 ## Prerrequisitos
