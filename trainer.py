@@ -8,15 +8,16 @@ from selenium.common.exceptions import NoSuchWindowException
 from seleniumwire.webdriver import Chrome as Driver
 from urllib.parse import unquote
 
-
 # Advertencia: esto se escribió en la decimosexta edición de Consumópolis
 # y es posible que no funcione posteriormente.
 
+__version__ = '0.9.1'
+
 print('''
-Consumópolis Trainer 0.9.1 (http://www.consumopolis.es/)
+Consumópolis Trainer %s (http://www.consumopolis.es/)
 Licencia Creative Commons Zero v1.0 Universal
 https://github.com/Aveeryy/consumodpolis
-''')
+''' % __version__)
 
 class Consumodpolis():
     # Juegos
@@ -271,6 +272,6 @@ class Consumodpolis():
 if __name__ == '__main__':
     try:
         Consumodpolis()
-    except (NoSuchWindowException, TypeError):
+    except (NoSuchWindowException, TypeError, KeyboardInterrupt):
         print('Saliendo...')
         pass
