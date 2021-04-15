@@ -1,10 +1,10 @@
 import json
 import re
-import getpass
-import time
 import requests
 import selenium
 import seleniumwire
+from selenium import webdriver
+from selenium.common.exceptions import NoSuchWindowException
 from seleniumwire.webdriver import Chrome as Driver
 from urllib.parse import unquote
 
@@ -13,7 +13,7 @@ from urllib.parse import unquote
 # y es posible que no funcione posteriormente.
 
 print('''
-Consumópolis Trainer (http://www.consumopolis.es/)
+Consumópolis Trainer 0.9.1 (http://www.consumopolis.es/)
 Licencia Creative Commons Zero v1.0 Universal
 https://github.com/Aveeryy/consumodpolis
 ''')
@@ -34,26 +34,26 @@ class Consumodpolis():
     }
 
     # Expresiones regulares
-    gameRegex = r'.+/\d?/.+=(\d)?.+=(\d)'
+    gameRegex = r'.+/\d?/.+o=(\d+).+=(\d+)'
         
     @classmethod
     def __init__(self):
         global driver, _session
 
+        # Ajustar el nivel de registro a debug
+        options = webdriver.ChromeOptions()
+        options.add_argument('--log-level=3')
+
         # Crear una instancia de webdriver
         print('Inicializando instancia de ChromeDriver...')
-        driver = Driver()
-        driver.get('http://www.consumopolis.es/concurso/index.html')
-        
-        # Hacer click en el botón de inicio de sesión
-        driver.find_element_by_id("city").click()
+        driver = Driver(options=options)
+        driver.get('https://consumopolis.consumo.gob.es/concurso/index.html')
 
         # Esperar a que se realice el inicio de sesión
         print('Esperando inicio de sesión')
         # Cambiar al iframe
         driver.switch_to.frame(0)
         while True:
-
             # Obtener los campos de entrada de usuario y contraseña
             try: 
                 _name = driver.find_element_by_id('nick').text
@@ -77,7 +77,8 @@ class Consumodpolis():
                 elif _sel == '2':
                     self.modify_score()
                 else:
-                    print('Opción inválida')        
+                    print('Opción inválida')     
+
         _menu()
 
     @classmethod
@@ -94,7 +95,7 @@ class Consumodpolis():
         _v = int(input('Nuevo valor (0-2500): '))
         if _v > 2500:
             _v = 2500
-        _r = requests.post('http://www.consumopolis.es/concurso/juegos/scripts/grabarPartida.aspx',
+        _r = requests.post('http://consumopolis.consumo.gob.es/concurso/juegos/scripts/grabarPartida.aspx',
                            data={'juego': _s, 'alumno': _session[1], 'puntos': _v})
         if b'ok' in _r.content:
             print('Cambiado el valor del juego "%s" a %d\n' %(self.games[str(_s)], _v))
@@ -103,6 +104,8 @@ class Consumodpolis():
         
     @classmethod
     def get_answers(self):
+        global _last_json
+        _last_json = ''
         gameRegex = self.gameRegex
         # Esperar a que el usuario seleccione un juego
         _iframe = driver.find_element_by_xpath('/html/body/div[1]/div[3]/div[2]/iframe')  
@@ -124,7 +127,7 @@ class Consumodpolis():
             _current_game = _game.group(0)
 
             if not hasattr(self, 'game_' + _id):
-                print('Juego no soportado.')
+                print('Juego no soportado, buena suerte.')
                 while _current_game in _iframe.get_attribute('src'):
                     continue
                 else:
@@ -136,13 +139,18 @@ class Consumodpolis():
 
     @classmethod
     def get_api_json(self):
+        global _last_json
         # Obtiene las respuestas de la memoria de Chrome
         print('Obteniendo JSON con las respuestas...')
-        time.sleep(1)
-        try:
-            return json.loads([r for r in driver.requests if 'recuperarContenidos.aspx' in r.url][-1:][0].response.body.decode())
-        except IndexError:
-            return 'Failure'
+        while True:
+            try:
+                _json = [r for r in driver.requests if 'recuperarContenidos.aspx' in r.url][-1].response.body.decode()
+            except (AttributeError, IndexError):
+                continue
+            if _json != _last_json:
+                break
+        _last_json = _json
+        return json.loads(_json)
 
     @classmethod
     def wait_until_finish(self):
@@ -207,7 +215,6 @@ class Consumodpolis():
         if _parsed == 'Failure':
             print('Ha ocurrido un error')
             return
-        print(_parsed)
         # Escribe las respuestas en orden
         for respuesta in _parsed['preguntas']:
             if respuesta['verdadero'] == 'true':
@@ -231,7 +238,7 @@ class Consumodpolis():
         for respuesta in _parsed['preguntas']:
             print('Respuesta: ' + unquote(respuesta['correcta']).replace('+', ' '))
             i -=- 1
-            if i >= 6:
+            if i >= 10:
                 break
         self.wait_until_finish()
 
@@ -253,6 +260,17 @@ class Consumodpolis():
         print('Longitud: ' + _parsed['longitud'])
         self.wait_until_finish()
 
+    @classmethod
+    # Black Friday, juego 10
+    def game_10(self, get_name=False):
+        if get_name:
+            return 'Black Friday'
+        self.game_7()
+        return
 
 if __name__ == '__main__':
-    Consumodpolis()
+    try:
+        Consumodpolis()
+    except (NoSuchWindowException, TypeError):
+        print('Saliendo...')
+        pass
